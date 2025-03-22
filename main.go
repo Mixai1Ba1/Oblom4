@@ -1,20 +1,21 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
+
 var topics = map[string]string{
-	"Закон Хика": `Закон Хика описывает время, необходимое для принятия решения, как логарифм от количества альтернатив.
-Подробнее: https://ru.wikipedia.org/wiki/Закон_Хика`,
-	"Меню в интерфейсах": `Меню представляют собой иерархию пунктов, позволяющих пользователю выбирать команды.`,
-	"Эвристики Юзабилити": `Набор принципов для оценки удобства интерфейса, например, рекомендации Нильсена.
-Ссылка: https://www.nngroup.com/articles/ten-usability-heuristics/`,
+	"Закон Хика":                `Закон Хика описывает время, необходимое для принятия решения, как логарифм от количества альтернатив. Подробнее: https://ru.wikipedia.org/wiki/Закон_Хика`,
+	"Меню в интерфейсах":        `Меню представляют собой иерархию пунктов, позволяющих пользователю выбирать команды.`,
+	"Эвристики Юзабилити":       `Набор принципов для оценки удобства интерфейса, например, рекомендации Нильсена. Ссылка: https://www.nngroup.com/articles/ten-usability-heuristics/`,
 	"Горячие клавиши":           `Сочетания клавиш, ускоряющие выполнение команд без использования мыши.`,
 	"Графические интерфейсы":    `GUI позволяет взаимодействовать с программами через визуальные элементы.`,
 	"Логика поиска по шаблону":  `Поиск осуществляется точным совпадением слова в тексте.`,
@@ -28,7 +29,7 @@ func main() {
 	myWindow := myApp.NewWindow("Справочная система")
 	myWindow.Resize(fyne.NewSize(1000, 600))
 
-	modeLabel := widget.NewLabel("Режим: Поиск по шаблону")
+	modeLabel := widget.NewLabel("Режим: Посимвольный поиск")
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Введите запрос...")
 
@@ -36,82 +37,50 @@ func main() {
 	content.Wrapping = fyne.TextWrapWord
 
 	sortedKeys := getSortedKeys()
-	topicList := widget.NewList(
-		func() int { return len(sortedKeys) },
-		func() fyne.CanvasObject { return widget.NewLabel("") },
-		func(i int, o fyne.CanvasObject) {
-			o.(*widget.Label).SetText(sortedKeys[i])
-		},
-	)
-	topicList.OnSelected = func(id int) {
-		key := sortedKeys[id]
-		content.ParseMarkdown("📘 **" + key + "**\n\n" + topics[key])
+	leftPanel := container.NewVBox(widget.NewLabelWithStyle("Темы", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+
+	for _, topic := range sortedKeys {
+		t := topic
+		btn := widget.NewButton(t, func() {
+			content.ParseMarkdown(fmt.Sprintf("📘 **%s**\n\n%s", t, topics[t]))
+		})
+		leftPanel.Add(btn)
 	}
+	leftPanel.Resize(fyne.NewSize(300, 600))
 
-	modeToggle := widget.NewButton("🔁 Переключить режим", func() {
-		if modeLabel.Text == "Режим: Поиск по шаблону" {
-			modeLabel.SetText("Режим: Посимвольный поиск")
-		} else {
-			modeLabel.SetText("Режим: Поиск по шаблону")
-		}
-	})
-
-	// searchEntry.OnChanged = func(text string) {
-	// 	if modeLabel.Text == "Режим: Посимвольный поиск" {
-	// 		filtered := ""
-	// 		for topic := range topics {
-	// 			if strings.Contains(strings.ToLower(topic), strings.ToLower(text)) {
-	// 				filtered += "• " + topic + "\n"
-	// 			}
-	// 		}
-	// 		if filtered == "" {
-	// 			content.ParseMarkdown("❌ Нет совпадений.")
-	// 		} else {
-	// 			content.ParseMarkdown("🔡 Найдено:\n" + filtered)
-	// 		}
-	// 	}
-	// }
+	// === Поиск на лету (посимв) + по Enter (шаблон) ===
 	searchEntry.OnChanged = func(text string) {
 		if modeLabel.Text == "Режим: Посимвольный поиск" {
-			filtered := ""
-			for topic := range topics {
-				if strings.Contains(strings.ToLower(topic), strings.ToLower(text)) {
-					filtered += "• " + topic + "\n"
+			text = strings.TrimSpace(strings.ToLower(text))
+			if text == "" {
+				content.ParseMarkdown("🔍 Введите запрос для поиска.")
+				return
+			}
+
+			var result string
+			for topic, desc := range topics {
+				if strings.Contains(strings.ToLower(topic), text) || strings.Contains(strings.ToLower(desc), text) {
+					preview := highlightText(desc, text)
+					result += fmt.Sprintf("🔹 **%s**\n%s\n\n", topic, preview)
 				}
 			}
-			if filtered == "" {
+
+			if result == "" {
 				content.ParseMarkdown("❌ Нет совпадений.")
 			} else {
-				content.ParseMarkdown("🔡 Найдены темы:\n" + filtered)
+				content.ParseMarkdown(result)
 			}
 		}
 	}
 
-	// searchEntry.OnSubmitted = func(text string) {
-	// 	if modeLabel.Text == "Режим: Поиск по шаблону" {
-	// 		found := false
-	// 		for topic, desc := range topics {
-	// 			if strings.Contains(strings.ToLower(desc), strings.ToLower(text)) {
-	// 				highlighted := strings.ReplaceAll(desc, text, "**"+text+"**")
-	// 				content.ParseMarkdown("🔍 **Найдено в \"" + topic + "\"**\n\n" + highlighted)
-	// 				found = true
-	// 				break
-	// 			}
-	// 		}
-	// 		if !found {
-	// 			content.ParseMarkdown("❌ Ничего не найдено.")
-	// 		}
-	// 	}
-	// }
 	searchEntry.OnSubmitted = func(text string) {
 		if modeLabel.Text == "Режим: Поиск по шаблону" {
+			text = strings.TrimSpace(text)
 			found := false
 			for topic, desc := range topics {
-				index := strings.Index(strings.ToLower(desc), strings.ToLower(text))
-				if index != -1 {
-					original := desc[index : index+len(text)]
-					highlighted := desc[:index] + "**" + original + "**" + desc[index+len(text):]
-					content.ParseMarkdown("🔍 **Найдено в \"" + topic + "\"**\n\n" + highlighted)
+				if strings.Contains(strings.ToLower(desc), strings.ToLower(text)) {
+					highlighted := highlightText(desc, text)
+					content.ParseMarkdown(fmt.Sprintf("🔍 **Найдено в \"%s\"**\n\n%s", topic, highlighted))
 					found = true
 					break
 				}
@@ -122,38 +91,21 @@ func main() {
 		}
 	}
 
-	// leftScroll := container.NewVScroll(container.NewVBox(
-	// 	widget.NewLabelWithStyle("Темы", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-	// 	topicList,
-	// ))
-	// leftScroll.SetMinSize(fyne.NewSize(300, 550))
-	// Статичный список тем слева
-	topicButtons := make([]fyne.CanvasObject, 0)
+	modeToggle := widget.NewButtonWithIcon("Переключить режим", theme.ViewRefreshIcon(), func() {
+		if modeLabel.Text == "Режим: Посимвольный поиск" {
+			modeLabel.SetText("Режим: Поиск по шаблону")
+		} else {
+			modeLabel.SetText("Режим: Посимвольный поиск")
+		}
+	})
 
-	for _, topic := range sortedKeys {
-		t := topic // копия, чтобы не залипло
-		btn := widget.NewButton(topic, func() {
-			content.ParseMarkdown("📘 **" + t + "**\n\n" + topics[t])
-		})
-		topicButtons = append(topicButtons, btn)
-	}
-
-	leftPanel := container.NewVBox(
-		widget.NewLabelWithStyle("Темы", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-	)
-	leftPanel.Add(container.NewVBox(topicButtons...))
-	leftPanel.Resize(fyne.NewSize(300, 600)) // фиксированная высота и ширина
-
-	// Справа: поиск и текст
 	rightPanel := container.NewVSplit(
 		container.NewVBox(modeLabel, searchEntry, modeToggle),
 		content,
 	)
 	rightPanel.Offset = 0.25
 
-	// myWindow.SetContent(container.NewHSplit(leftScroll, rightPanel))
 	myWindow.SetContent(container.NewHSplit(leftPanel, rightPanel))
-
 	myWindow.ShowAndRun()
 }
 
@@ -163,4 +115,18 @@ func getSortedKeys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// Подсветка совпавшего текста (синим)
+func highlightText(text, query string) string {
+	lowered := strings.ToLower(text)
+	loweredQuery := strings.ToLower(query)
+
+	index := strings.Index(lowered, loweredQuery)
+	if index == -1 {
+		return text
+	}
+
+	original := text[index : index+len(query)]
+	return text[:index] + "[color=blue]" + original + "[/color]" + text[index+len(query):]
 }
