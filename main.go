@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -31,11 +32,8 @@ func main() {
 	searchEntry := widget.NewEntry()
 	searchEntry.SetPlaceHolder("Введите запрос...")
 
-	content := widget.NewRichText()
+	content := widget.NewRichTextFromMarkdown("Выберите тему слева или используйте поиск.")
 	content.Wrapping = fyne.TextWrapWord
-	content.Segments = []widget.RichTextSegment{
-		&widget.TextSegment{Text: "Выберите тему слева или используйте поиск."},
-	}
 
 	sortedKeys := getSortedKeys()
 	leftPanel := container.NewVBox(widget.NewLabelWithStyle("Темы", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
@@ -43,54 +41,34 @@ func main() {
 	for _, topic := range sortedKeys {
 		t := topic
 		btn := widget.NewButton(t, func() {
-			content.Segments = []widget.RichTextSegment{
-				&widget.TextSegment{
-					Text:      "📘 " + t,
-					StyleName: widget.RichTextStyleNameStrong,
-				},
-				&widget.TextSegment{Text: "\n\n" + topics[t]},
-			}
-			content.Refresh()
+			content.ParseMarkdown(fmt.Sprintf("📘 **%s**\n\n%s", t, topics[t]))
 		})
 		leftPanel.Add(btn)
 	}
 	leftPanel.Resize(fyne.NewSize(300, 600))
 
-	// === Поиск ===
+	// === Поиск на лету (посимв) + по Enter (шаблон) ===
 	searchEntry.OnChanged = func(text string) {
 		if modeLabel.Text == "Режим: Посимвольный поиск" {
 			text = strings.TrimSpace(strings.ToLower(text))
 			if text == "" {
-				content.Segments = []widget.RichTextSegment{
-					&widget.TextSegment{Text: "🔍 Введите запрос для поиска."},
-				}
-				content.Refresh()
+				content.ParseMarkdown("🔍 Введите запрос для поиска.")
 				return
 			}
 
-			var segments []widget.RichTextSegment
+			var result string
 			for topic, desc := range topics {
 				if strings.Contains(strings.ToLower(topic), text) || strings.Contains(strings.ToLower(desc), text) {
-					segments = append(segments,
-						&widget.TextSegment{
-							Text:      "🔹 " + topic,
-							StyleName: widget.RichTextStyleNameStrong,
-						},
-						&widget.TextSegment{Text: "\n"},
-					)
-					segments = append(segments, highlightTextSegments(desc, text)...)
-					segments = append(segments, &widget.TextSegment{Text: "\n\n"})
+					preview := highlightText(desc, text)
+					result += fmt.Sprintf("🔹 **%s**\n%s\n\n", topic, preview)
 				}
 			}
 
-			if len(segments) == 0 {
-				content.Segments = []widget.RichTextSegment{
-					&widget.TextSegment{Text: "❌ Нет совпадений."},
-				}
+			if result == "" {
+				content.ParseMarkdown("❌ Нет совпадений.")
 			} else {
-				content.Segments = segments
+				content.ParseMarkdown(result)
 			}
-			content.Refresh()
 		}
 	}
 
@@ -100,25 +78,14 @@ func main() {
 			found := false
 			for topic, desc := range topics {
 				if strings.Contains(strings.ToLower(desc), strings.ToLower(text)) {
-					segments := []widget.RichTextSegment{
-						&widget.TextSegment{
-							Text:      "🔍 Найдено в \"" + topic + "\"",
-							StyleName: widget.RichTextStyleNameStrong,
-						},
-						&widget.TextSegment{Text: "\n"},
-					}
-					segments = append(segments, highlightTextSegments(desc, text)...)
-					content.Segments = segments
-					content.Refresh()
+					highlighted := highlightText(desc, text)
+					content.ParseMarkdown(fmt.Sprintf("🔍 **Найдено в \"%s\"**\n\n%s", topic, highlighted))
 					found = true
 					break
 				}
 			}
 			if !found {
-				content.Segments = []widget.RichTextSegment{
-					&widget.TextSegment{Text: "❌ Ничего не найдено."},
-				}
-				content.Refresh()
+				content.ParseMarkdown("❌ Ничего не найдено.")
 			}
 		}
 	}
@@ -141,7 +108,6 @@ func main() {
 	myWindow.ShowAndRun()
 }
 
-// Возвращает список ключей в порядке добавления
 func getSortedKeys() []string {
 	keys := make([]string, 0, len(topics))
 	for k := range topics {
@@ -150,35 +116,16 @@ func getSortedKeys() []string {
 	return keys
 }
 
-// Разбивает текст на сегменты с подсветкой совпадений
-func highlightTextSegments(text, query string) []widget.RichTextSegment {
-	var segments []widget.RichTextSegment
+// Подсветка совпавшего текста **жирным**
+func highlightText(text, query string) string {
+	lowered := strings.ToLower(text)
+	loweredQuery := strings.ToLower(query)
 
-	lowerText := strings.ToLower(text)
-	lowerQuery := strings.ToLower(query)
-
-	start := 0
-	for {
-		index := strings.Index(lowerText[start:], lowerQuery)
-		if index == -1 {
-			break
-		}
-		index += start
-
-		if index > start {
-			segments = append(segments, &widget.TextSegment{Text: text[start:index]})
-		}
-
-		segments = append(segments, &widget.TextSegment{
-			Text:      text[index : index+len(query)],
-			StyleName: widget.RichTextStyleNameEmphasis, // синяя/курсивная подсветка
-		})
-
-		start = index + len(query)
-	}
-	if start < len(text) {
-		segments = append(segments, &widget.TextSegment{Text: text[start:]})
+	index := strings.Index(lowered, loweredQuery)
+	if index == -1 {
+		return text
 	}
 
-	return segments
+	original := text[index : index+len(query)]
+	return text[:index] + "**" + original + "**" + text[index+len(query):]
 }
