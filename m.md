@@ -55,7 +55,7 @@ func main() {
 		})
 		leftPanel.Add(btn)
 	}
-	leftPanel.Resize(fyne.NewSize(150, 600))
+	leftPanel.Resize(fyne.NewSize(300, 600))
 
 	searchEntry.OnChanged = func(text string) {
 		if modeLabel.Text != "Режим: Посимвольный поиск" {
